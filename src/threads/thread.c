@@ -88,6 +88,7 @@ void thread_wakeup(int64_t now) {
     struct list_elem* e = list_front(&sleep_list);
     struct thread* t = list_entry(e, struct thread, elem);
     if (now >= t->sleep_unitl) {
+      // pop first, unblock second, otherwise, sleep_list would mess up with ready_list
       list_pop_front(&sleep_list);
       thread_unblock(t);
     } else {
