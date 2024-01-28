@@ -24,6 +24,8 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+static struct list sleep_list;
+
 /** List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
@@ -71,6 +73,36 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+void thread_sleep(int64_t until) {
+  struct thread *t = thread_current();
+  enum intr_level old_level = intr_disable();
+  t->sleep_unitl = until;
+  list_insert_ordered(&sleep_list, &t->elem, compare_thread_sleep, NULL);
+  thread_block();
+  intr_set_level (old_level);
+}
+
+void thread_wakeup(int64_t now) {
+  enum intr_level old_level = intr_disable();
+  while (!list_empty(&sleep_list)) {
+    struct list_elem* e = list_front(&sleep_list);
+    struct thread* t = list_entry(e, struct thread, elem);
+    if (now >= t->sleep_unitl) {
+      list_pop_front(&sleep_list);
+      thread_unblock(t);
+    } else {
+      break;
+    }
+  }
+  intr_set_level(old_level);
+}
+
+bool compare_thread_sleep(const struct list_elem* a, const struct list_elem* b, void* aux UNUSED) {
+  const struct thread* thread_a = list_entry(a, struct thread, elem);
+  const struct thread* thread_b = list_entry(b, struct thread, elem);
+  return thread_a->sleep_unitl < thread_b->sleep_unitl;
+}
+
 /** Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -92,6 +124,8 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  list_init(&sleep_list);
+  // lock_init(&sleep_lock);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
