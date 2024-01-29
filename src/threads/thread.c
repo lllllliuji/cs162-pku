@@ -91,6 +91,7 @@ void thread_wakeup(int64_t now) {
       // pop first, unblock second, otherwise, sleep_list would mess up with ready_list
       list_pop_front(&sleep_list);
       thread_unblock(t);
+      // printf("============== thread %s wake up tick: %d\n", t->name, timer_ticks());
     } else {
       break;
     }
@@ -102,6 +103,12 @@ bool compare_thread_sleep(const struct list_elem* a, const struct list_elem* b, 
   const struct thread* thread_a = list_entry(a, struct thread, elem);
   const struct thread* thread_b = list_entry(b, struct thread, elem);
   return thread_a->sleep_unitl < thread_b->sleep_unitl;
+}
+
+bool compare_thread_priority(const struct list_elem *a, const struct list_elem *b, void* aux) {
+  const struct thread* thread_a = list_entry(a, struct thread, elem);
+  const struct thread* thread_b = list_entry(b, struct thread, elem);
+  return thread_a->priority > thread_b->priority;
 }
 
 /** Initializes the threading system by transforming the code
@@ -344,7 +351,8 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+    list_insert_ordered(&ready_list, &cur->elem, compare_thread_priority, NULL);
+
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);

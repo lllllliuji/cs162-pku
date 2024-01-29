@@ -145,5 +145,6 @@ void thread_sleep(int64_t until);
 void thread_wakeup(int64_t now);
 
 bool compare_thread_sleep(const struct list_elem *a, const struct list_elem *b, void* aux);
+bool compare_thread_priority(const struct list_elem *a, const struct list_elem *b, void* aux);
 
 #endif /**< threads/thread.h */
