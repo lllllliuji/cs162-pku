@@ -52,7 +52,6 @@ build/
 *.lo
 *.la
 *~
-*.pdf
 *.swp
 a.out
 
@@ -242,5 +241,3 @@ docs/dev
 # Clangd cache index
 .cache
 
-# Submission zip files
-*.zip
