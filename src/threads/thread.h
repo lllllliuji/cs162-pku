@@ -23,6 +23,7 @@ typedef int tid_t;
 #define PRI_MIN 0                       /**< Lowest priority. */
 #define PRI_DEFAULT 31                  /**< Default priority. */
 #define PRI_MAX 63                      /**< Highest priority. */
+#define PRI_DONOR_LEVEL_MAX 8
 
 /** A kernel thread or user process.
 
@@ -95,6 +96,14 @@ struct thread
 
     int64_t sleep_unitl;
 
+    struct list_elem donor_elem;
+
+    struct list priority_donor_list;
+
+    struct lock* wait_on_lock;
+
+    struct list* elem_list;
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /**< Page directory. */
@@ -146,5 +155,14 @@ void thread_wakeup(int64_t now);
 
 bool compare_thread_sleep(const struct list_elem *a, const struct list_elem *b, void* aux);
 bool compare_thread_priority(const struct list_elem *a, const struct list_elem *b, void* aux);
+bool compare_thread_priority_donor(const struct list_elem *a, const struct list_elem *b, void* aux);
 
+
+int mmax(int a, int b);
+int get_actual_priority(struct thread* t);
+void priority_check(void);
+
+// void reorder_thread_in_ready_list(struct thread* t);
+void remove_list_elem(struct list_elem* elem);
+void reorder_wait_list(struct list* wait_list, struct list_elem* elem);
 #endif /**< threads/thread.h */

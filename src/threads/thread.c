@@ -73,6 +73,52 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+void remove_list_elem(struct list_elem* elem) {
+  if (elem != NULL && elem->prev != NULL && elem->next != NULL) {
+    list_remove(elem);
+  }
+}
+
+void reorder_wait_list(struct list* wait_list, struct list_elem* elem) {
+  list_remove(elem);
+  list_insert_ordered(wait_list, elem, compare_thread_priority, NULL);
+}
+
+// void reorder_thread_in_ready_list(struct thread* t) {
+//   list_remove(&t->elem);
+//   list_insert_ordered(&ready_list, &t->elem, compare_thread_priority, NULL);
+// }
+
+int mmax(int a, int b) {
+  return a > b ? a : b;
+}
+
+int get_actual_priority(struct thread* t) {
+  int ret = t->priority;
+  enum intr_level old_level = intr_disable();
+  if (!list_empty(&t->priority_donor_list)) {
+    ret = mmax(ret, get_actual_priority(list_entry(list_front(&t->priority_donor_list), struct thread, donor_elem)));
+  }
+  intr_set_level(old_level);
+  return ret;
+}
+
+void priority_check(void) {
+  enum intr_level old_level = intr_disable();
+  if (list_empty(&ready_list)) {
+    intr_set_level(old_level);
+    return;
+  }
+  if (get_actual_priority(thread_current()) < get_actual_priority(list_entry(list_front(&ready_list), struct thread, elem))) {
+    if (intr_context()) {
+      intr_yield_on_return();
+    } else {
+      thread_yield();
+    }
+  }
+  intr_set_level(old_level);
+}
+
 void thread_sleep(int64_t until) {
   struct thread *t = thread_current();
   enum intr_level old_level = intr_disable();
@@ -83,7 +129,8 @@ void thread_sleep(int64_t until) {
 }
 
 void thread_wakeup(int64_t now) {
-  enum intr_level old_level = intr_disable();
+  // enum intr_level old_level = intr_disable();
+  ASSERT(intr_get_level() == INTR_OFF);  // interrupt handler must forbidden interrupt
   while (!list_empty(&sleep_list)) {
     struct list_elem* e = list_front(&sleep_list);
     struct thread* t = list_entry(e, struct thread, elem);
@@ -96,7 +143,7 @@ void thread_wakeup(int64_t now) {
       break;
     }
   }
-  intr_set_level(old_level);
+  // intr_set_level(old_level);
 }
 
 bool compare_thread_sleep(const struct list_elem* a, const struct list_elem* b, void* aux UNUSED) {
@@ -108,7 +155,13 @@ bool compare_thread_sleep(const struct list_elem* a, const struct list_elem* b, 
 bool compare_thread_priority(const struct list_elem *a, const struct list_elem *b, void* aux UNUSED) {
   const struct thread* thread_a = list_entry(a, struct thread, elem);
   const struct thread* thread_b = list_entry(b, struct thread, elem);
-  return thread_a->priority > thread_b->priority;
+  return get_actual_priority(thread_a) > get_actual_priority(thread_b);
+}
+
+bool compare_thread_priority_donor(const struct list_elem *a, const struct list_elem *b, void* aux UNUSED) {
+  const struct thread* thread_a = list_entry(a, struct thread, donor_elem);
+  const struct thread* thread_b = list_entry(b, struct thread, donor_elem);
+  return get_actual_priority(thread_a) > get_actual_priority(thread_b);
 }
 
 /** Initializes the threading system by transforming the code
@@ -242,6 +295,7 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
+  priority_check();
 
   return tid;
 }
@@ -279,7 +333,10 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_insert_ordered(&ready_list, &t->elem, compare_thread_priority, NULL);
+  if (t != idle_thread) {
+    list_insert_ordered(&ready_list, &t->elem, compare_thread_priority, NULL);
+    t->elem_list = &ready_list;
+  }
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -379,13 +436,15 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  priority_check();
 }
 
 /** Returns the current thread's priority. */
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  return get_actual_priority(thread_current());
+  // return thread_current ()->priority;
 }
 
 /** Sets the current thread's nice value to NICE. */
@@ -506,6 +565,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->elem_list = NULL;
+  t->wait_on_lock = NULL;
+  t->elem.prev = t->elem.next = NULL;
+  t->donor_elem.prev = t->donor_elem.next = NULL;
+  list_init(&t->priority_donor_list);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
