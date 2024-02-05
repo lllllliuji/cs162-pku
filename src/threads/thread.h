@@ -25,6 +25,8 @@ typedef int tid_t;
 #define PRI_MAX 63                      /**< Highest priority. */
 #define PRI_DONOR_LEVEL_MAX 8
 
+#define ONE_IN_17_14_FORMAT (1 << 14)                    /**1 in 17.14 format*/
+
 /** A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -102,7 +104,11 @@ struct thread
 
     struct lock* wait_on_lock;
 
-    struct list* elem_list;
+   //  struct list* elem_list;
+
+    int nice;
+
+    int recent_cpu;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -162,7 +168,11 @@ int mmax(int a, int b);
 int get_actual_priority(struct thread* t);
 void priority_check(void);
 
-// void reorder_thread_in_ready_list(struct thread* t);
+void reorder_thread_in_ready_list(struct thread* t);
 void remove_list_elem(struct list_elem* elem);
 void reorder_wait_list(struct list* wait_list, struct list_elem* elem);
+
+void recompute_priority(void);
+void update_recent_cpu(void);
+
 #endif /**< threads/thread.h */

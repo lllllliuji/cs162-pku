@@ -68,9 +68,9 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      // list_push_back (&sema->waiters, &thread_current ()->elem);
-      list_insert_ordered(&sema->waiters, &thread_current()->elem, compare_thread_priority, NULL);
-      thread_current()->elem_list = &sema->waiters;
+      list_push_back (&sema->waiters, &thread_current()->elem);
+      // list_insert_ordered(&sema->waiters, &thread_current()->elem, compare_thread_priority, NULL);
+      // thread_current()->elem_list = &sema->waiters;
       thread_block ();
     }
   sema->value--;
@@ -116,6 +116,8 @@ sema_up (struct semaphore *sema)
 
   old_level = intr_disable ();
   if (!list_empty (&sema->waiters)) {
+    // sema->waiters keeps unordered, sort it and pop 
+    list_sort(&sema->waiters, compare_thread_priority, NULL);
     thread_unblock (list_entry (list_pop_front (&sema->waiters), struct thread, elem));
   }
   sema->value++;
@@ -199,6 +201,13 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  // mlfq scheduler does not do priority donation
+  if (thread_mlfqs == true) {
+    sema_down (&lock->semaphore);
+    lock->holder = thread_current ();
+    return;
+  }
+
   enum intr_level old_level = intr_disable();
   
   struct thread* donor = thread_current();
@@ -212,21 +221,25 @@ lock_acquire (struct lock *lock)
     if (holder == NULL) {
       break;
     }
-    // for multi donoation
+    // for multi donoation, keep priority_donor_list ordered
     remove_list_elem(&donor->donor_elem);
     list_insert_ordered(&holder->priority_donor_list, &donor->donor_elem, compare_thread_priority_donor, NULL);
-    // if (holder->status == THREAD_READY) {
-    //   reorder_thread_in_ready_list(holder);
+
+    // keep ready_list ordered
+    if (holder->status == THREAD_READY) {
+      reorder_thread_in_ready_list(holder);
+    }
+    // if (holder->elem.prev != NULL && holder->elem.next != NULL) {
+    //   reorder_wait_list(holder->elem_list, &holder->elem);
     // }
-    if (holder->elem.prev != NULL && holder->elem.next != NULL) {
-      reorder_wait_list(holder->elem_list, &holder->elem);
-    }
-    if (holder->wait_on_lock != NULL) {
-      remove_list_elem(&holder->donor_elem);
-      list_insert_ordered(&holder->wait_on_lock->holder->priority_donor_list, &holder->donor_elem, compare_thread_priority_donor, NULL);
-      donor = holder;
-      holder = holder->wait_on_lock->holder;
-    }
+    donor = holder;
+    holder = holder->wait_on_lock == NULL ? NULL : holder->wait_on_lock->holder;
+    // if (holder->wait_on_lock != NULL) {
+    //   // remove_list_elem(&holder->donor_elem);
+    //   // list_insert_ordered(&holder->wait_on_lock->holder->priority_donor_list, &holder->donor_elem, compare_thread_priority_donor, NULL);
+    //   donor = holder;
+    //   holder = holder->wait_on_lock->holder;
+    // }
   }
   
   sema_down (&lock->semaphore);
@@ -265,6 +278,14 @@ lock_release (struct lock *lock)
 {
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
+
+  // mlfq scheduler does not do priority donation
+  if (thread_mlfqs == true) {
+    lock->holder = NULL;
+    sema_up (&lock->semaphore);
+    priority_check();
+    return;
+  }
 
   enum intr_level old_level = intr_disable();
   struct thread* cur = thread_current();

@@ -92,6 +92,9 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
+  if (ticks < 0) {
+    return;
+  }
   thread_sleep(start + ticks);
   // while (timer_elapsed (start) < ticks) 
   //   thread_yield ();
@@ -172,7 +175,20 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+  if (thread_mlfqs == true) {
+    // every tick
+    thread_current()->recent_cpu += ONE_IN_17_14_FORMAT;
+    // every time slice(fourth tick)
+    if ((ticks & 3) == 0) {
+      recompute_priority();
+    }
+    // every second
+    if (ticks % TIMER_FREQ == 0) {
+      update_recent_cpu();
+    }
+  }
   thread_wakeup(ticks);
+  // priority_check(); 其实没有必要
   thread_tick ();
 }
 
