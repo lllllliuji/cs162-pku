@@ -82,7 +82,7 @@ void recompute_priority(void) {
   for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
     struct thread* t = list_entry(e, struct thread, allelem);
     if (t == idle_thread) continue;
-    t->priority = PRI_MAX - t->recent_cpu / 4 / ONE_IN_17_14_FORMAT - 2 * t->nice;
+    t->priority = PRI_MAX - (t->recent_cpu >> 16) - (t->nice << 1);
   }
   list_sort(&ready_list, compare_thread_priority, NULL);
 }
@@ -92,14 +92,14 @@ void update_recent_cpu(void) {
   ASSERT(intr_context())
   int ready_threads = list_size(&ready_list) + (thread_current() != idle_thread);
   // 16110, 273 stand for 59 / 60, 1 / 60 in 17.14 format respectively
-  load_avg = ((int64_t) 16110) * load_avg / ONE_IN_17_14_FORMAT + ready_threads * 273;
-  int decay = (((int64_t) (2 * load_avg)) * ONE_IN_17_14_FORMAT) / (2 * load_avg + ONE_IN_17_14_FORMAT);
+  load_avg = ((((int64_t) 16110) * load_avg) >> 14) + ready_threads * 273;
+  int decay = (((int64_t) (load_avg << 1)) << 14) / ((load_avg << 1)+ ONE_IN_17_14_FORMAT);
 
   struct list_elem *e;
   for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next(e)) {
     struct thread* t = list_entry(e, struct thread, allelem);
     if (t == idle_thread) continue;
-    t->recent_cpu = ((int64_t) decay) * t->recent_cpu / ONE_IN_17_14_FORMAT + t->nice * ONE_IN_17_14_FORMAT;
+    t->recent_cpu = ((((int64_t) decay) * t->recent_cpu) >> 14) + (t->nice << 14);
   }
 }
 

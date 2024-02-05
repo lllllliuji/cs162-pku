@@ -188,7 +188,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
     }
   }
   thread_wakeup(ticks);
-  // priority_check(); 其实没有必要
+  priority_check(); // 其实没有必要
   thread_tick ();
 }
 
