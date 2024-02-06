@@ -116,9 +116,10 @@ sema_up (struct semaphore *sema)
 
   old_level = intr_disable ();
   if (!list_empty (&sema->waiters)) {
-    // sema->waiters keeps unordered, sort it and pop 
-    list_sort(&sema->waiters, compare_thread_priority, NULL);
-    thread_unblock (list_entry (list_pop_front (&sema->waiters), struct thread, elem));
+    // because compare_thread_priority are compared in no-decreasing order, so use list_min here to get max priroity
+    struct list_elem *e = list_min(&sema->waiters, compare_thread_priority, NULL);
+    list_remove(e);
+    thread_unblock(list_entry(e, struct thread, elem));
   }
   sema->value++;
   priority_check();
@@ -221,25 +222,13 @@ lock_acquire (struct lock *lock)
     if (holder == NULL) {
       break;
     }
-    // for multi donoation, keep priority_donor_list ordered
+    // for multi donoation, delete first keep priority_donor_list
     remove_list_elem(&donor->donor_elem);
-    list_insert_ordered(&holder->priority_donor_list, &donor->donor_elem, compare_thread_priority_donor, NULL);
+    list_push_back(&holder->priority_donor_list, &donor->donor_elem);
+    holder->boosted_priority = mmax(holder->boosted_priority, get_actual_priority(donor));
 
-    // keep ready_list ordered
-    if (holder->status == THREAD_READY) {
-      reorder_thread_in_ready_list(holder);
-    }
-    // if (holder->elem.prev != NULL && holder->elem.next != NULL) {
-    //   reorder_wait_list(holder->elem_list, &holder->elem);
-    // }
     donor = holder;
     holder = holder->wait_on_lock == NULL ? NULL : holder->wait_on_lock->holder;
-    // if (holder->wait_on_lock != NULL) {
-    //   // remove_list_elem(&holder->donor_elem);
-    //   // list_insert_ordered(&holder->wait_on_lock->holder->priority_donor_list, &holder->donor_elem, compare_thread_priority_donor, NULL);
-    //   donor = holder;
-    //   holder = holder->wait_on_lock->holder;
-    // }
   }
   
   sema_down (&lock->semaphore);
@@ -290,11 +279,18 @@ lock_release (struct lock *lock)
   enum intr_level old_level = intr_disable();
   struct thread* cur = thread_current();
   struct list_elem* e;
+  // recompute boosted_priority when lock release
+  int boosted_priority = PRI_MIN;
   for (e = list_begin(&cur->priority_donor_list); e != list_end(&cur->priority_donor_list);) {
     struct thread* t = list_entry(e, struct thread, donor_elem);
-    e = t->wait_on_lock == lock ? list_remove(e) : list_next(e);
+    if (t->wait_on_lock == lock) {
+      e = list_remove(e);
+    } else {
+      boosted_priority = mmax(boosted_priority,get_actual_priority(list_entry(e, struct thread, donor_elem)));
+      e = list_next(e);
+    }
   }
-
+  thread_current()->boosted_priority = boosted_priority;
   lock->holder = NULL;
   sema_up (&lock->semaphore);
   intr_set_level(old_level);
@@ -362,7 +358,6 @@ cond_wait (struct condition *cond, struct lock *lock)
   
   sema_init (&waiter.semaphore, 0);
   list_push_back (&cond->waiters, &waiter.elem);
-  // list_insert_ordered(&cond->waiters, &waiter.elem, compare_cond_waiter_priority, NULL); // 不对，waiter_semapore的队列里面还没有值，无法排序
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);

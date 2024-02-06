@@ -104,7 +104,7 @@ struct thread
 
     struct lock* wait_on_lock;
 
-   //  struct list* elem_list;
+    int boosted_priority;
 
     int nice;
 
@@ -161,16 +161,12 @@ void thread_wakeup(int64_t now);
 
 bool compare_thread_sleep(const struct list_elem *a, const struct list_elem *b, void* aux);
 bool compare_thread_priority(const struct list_elem *a, const struct list_elem *b, void* aux);
-bool compare_thread_priority_donor(const struct list_elem *a, const struct list_elem *b, void* aux);
-
 
 int mmax(int a, int b);
 int get_actual_priority(struct thread* t);
 void priority_check(void);
 
-void reorder_thread_in_ready_list(struct thread* t);
 void remove_list_elem(struct list_elem* elem);
-void reorder_wait_list(struct list* wait_list, struct list_elem* elem);
 
 void recompute_priority(void);
 void update_recent_cpu(void);
